@@ -66,6 +66,8 @@ type MeetingNpcConfig = {
    * but this file's unit tests use minimal fixtures, so it is optional and guarded with a default. */
   adapterType?: string;
   hermesProfileId?: string | null;
+  /** Human-stable Hermes route name; `hermesProfileId` is a database UUID. */
+  hermesProfileName?: string | null;
   role?: string | null;
   passPolicy?: string | null;
   /** System instructions to put on this NPC's turn. Computed and filled in by getNpcConfig*. */
@@ -245,6 +247,12 @@ type RegisterMeetingDiscussionHandlersArgs = {
       runQueue?: (prompt: string) => Promise<string>;
       /** Deterministic tests only; production uses a timestamp id. */
       meetingId?: () => string;
+      /** Production resolves an unseated worker profile through the channel's bound gateway. */
+      createProfileRunner?: (
+        channelId: string,
+        profileName: "mymanager01",
+        sessionKey: string,
+      ) => Promise<((prompt: string) => Promise<string>) | null>;
     };
   };
 };
@@ -588,14 +596,9 @@ export function registerMeetingDiscussionHandlers({
     let wikiQueueRunner: ((prompt: string) => Promise<string>) | null = null;
 
     if (deps.wiki260927?.enabled) {
-      const searcher = npcConfigs.find((npc) => npc.hermesProfileId === "search");
-      const manager = npcConfigs.find((npc) => npc.hermesProfileId === "mymanager01");
+      const searcher = npcConfigs.find((npc) => npc.hermesProfileName === "search");
       if (!searcher) {
         socket.emit("meeting:error", { error: "wiki260927_searcher_missing" });
-        return;
-      }
-      if (!manager) {
-        socket.emit("meeting:error", { error: "wiki260927_manager_missing" });
         return;
       }
 
@@ -624,9 +627,14 @@ export function registerMeetingDiscussionHandlers({
         const researchRunner =
           deps.wiki260927.runResearch ??
           (await resolveWorkerRunner(searcher, `${meetingSessionScope(meetingId)}-research`));
-        wikiQueueRunner =
-          deps.wiki260927.runQueue ??
-          (await resolveWorkerRunner(manager, `${meetingSessionScope(meetingId)}-outbox`));
+        wikiQueueRunner = deps.wiki260927.runQueue ?? null;
+        if (!wikiQueueRunner && deps.wiki260927.createProfileRunner) {
+          wikiQueueRunner = await deps.wiki260927.createProfileRunner(
+            channelId,
+            "mymanager01",
+            `${meetingSessionScope(meetingId)}-outbox`,
+          );
+        }
         if (!researchRunner) throw new Error("wiki260927_searcher_unavailable");
         if (!wikiQueueRunner) throw new Error("wiki260927_manager_unavailable");
 

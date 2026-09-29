@@ -12,6 +12,7 @@ import {
   npcs,
   gatewayResources,
   chatRoomMembers,
+  channelGatewayBindings,
 } from "@/db";
 import {
   decryptGatewayToken,
@@ -363,4 +364,35 @@ export async function getProfileClientForNpc(npcId: string): Promise<HermesClien
 
   if (!rows[0]) return null;
   return buildProfileClient(rows[0]);
+}
+
+/**
+ * Resolve an orchestration-only Hermes profile through a channel's explicit gateway binding.
+ * Unlike `getProfileClientForNpc`, this does not require the worker to be rendered as an office NPC.
+ */
+export async function getProfileClientForChannel(
+  channelId: string,
+  profileName: string,
+): Promise<HermesClient | null> {
+  const rows = await db
+    .select({
+      profileName: hermesProfiles.profileName,
+      tokenEncrypted: hermesProfiles.tokenEncrypted,
+      baseUrl: gatewayResources.baseUrl,
+    })
+    .from(channelGatewayBindings)
+    .innerJoin(
+      hermesProfiles,
+      eq(channelGatewayBindings.gatewayId, hermesProfiles.gatewayId),
+    )
+    .innerJoin(gatewayResources, eq(hermesProfiles.gatewayId, gatewayResources.id))
+    .where(
+      and(
+        eq(channelGatewayBindings.channelId, channelId),
+        eq(hermesProfiles.profileName, profileName),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ? buildProfileClient(rows[0]) : null;
 }

@@ -12,7 +12,7 @@
 import { and, eq } from "drizzle-orm";
 
 import { db, isPostgres, npcSessions } from "@/db";
-import { getProfileClientForNpc } from "@/lib/hermes-profiles";
+import { getProfileClientForChannel, getProfileClientForNpc } from "@/lib/hermes-profiles";
 import { HermesAdapter } from "@/lib/adapters/hermes-adapter";
 
 export type NpcDispatchKind = "hermes" | "openclaw" | "registry" | "unbound";
@@ -123,6 +123,15 @@ export async function createHermesAdapterForNpc(
 
   const storedSessionRef = await getStoredHermesSessionRef(npcId, userId, contextKey);
   return new HermesAdapter(client, { sessionId: storedSessionRef ?? undefined });
+}
+
+/** A background worker profile does not need an office NPC or an npc_sessions row. */
+export async function createHermesAdapterForChannelProfile(
+  channelId: string,
+  profileName: string,
+): Promise<HermesAdapter | null> {
+  const client = await getProfileClientForChannel(channelId, profileName);
+  return client ? new HermesAdapter(client) : null;
 }
 
 // Run registry — abort/steer arrive on later, independent socket events, after the

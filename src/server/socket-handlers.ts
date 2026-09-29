@@ -110,6 +110,7 @@ import { OpencodeAdapter as OpenCodeAdapter } from "../lib/adapters/opencode-ada
 import {
   classifyNpcDispatch,
   clearHermesRun,
+  createHermesAdapterForChannelProfile,
   createHermesAdapterForNpc,
   deriveHermesContextKey,
   persistHermesSessionRef,
@@ -158,6 +159,7 @@ interface NpcConfig {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
   hermesProfileId: string | null;
+  hermesProfileName?: string | null;
   _channelId: string;
   _name: string;
   role?: string | null;
@@ -487,6 +489,7 @@ async function getNpcConfig(
       adapterType: typeof npc.adapterType === "string" ? npc.adapterType : "openclaw",
       adapterConfig,
       hermesProfileId: typeof npc.hermesProfileId === "string" ? npc.hermesProfileId : null,
+      hermesProfileName: npc.profile.profileName,
       _channelId: npc.channelId as string,
       _name: npc.name,
       role: "Participant",
@@ -521,6 +524,7 @@ export async function getNpcConfigsForChannel(
         adapterType: typeof npc.adapterType === "string" ? npc.adapterType : "openclaw",
         adapterConfig,
         hermesProfileId: typeof npc.hermesProfileId === "string" ? npc.hermesProfileId : null,
+        hermesProfileName: npc.profile.profileName,
         _channelId: channelId,
         _name: npc.name,
         meetingProtocol: typeof oc.meetingProtocol === "string" ? oc.meetingProtocol : null,
@@ -1912,7 +1916,21 @@ export function setupSocketHandlers(io: Server) {
         persistMeetingMinutes,
         // This deployment's meetings are grounded in the isolated Wiki260927 Hermes clone.
         // The integration itself pins the exact vault id/root and fails closed on any mismatch.
-        wiki260927: { enabled: true },
+        wiki260927: {
+          enabled: true,
+          createProfileRunner: async (channelId, profileName, sessionKey) => {
+            const adapter = await createHermesAdapterForChannelProfile(channelId, profileName);
+            if (!adapter) return null;
+            return async (prompt) =>
+              (
+                await adapter.execute({
+                  sessionKey,
+                  prompt,
+                  userId: user.userId,
+                })
+              ).response;
+          },
+        },
       },
     });
 
