@@ -52,7 +52,6 @@ async function mount(props: Partial<MeetingOutcomePanelProps>): Promise<HTMLElem
           summaryStatus="ok"
           npcs={npcs}
           canRegister
-          registerSupported
           registered={null}
           onRegister={async () => {}}
           onRetrySummary={async () => {}}
@@ -154,13 +153,4 @@ test("without register permission, the draft is shown but there is no register b
   const el = await mount({ canRegister: false });
   assert.equal(el.querySelectorAll("[data-outcome-item]").length, 2);
   assert.equal(el.querySelector("[data-outcome-register]"), null);
-});
-
-test("when the plugin can't create pending-approval cards, it renders an upgrade notice instead of the button and locks the draft", async () => {
-  const el = await mount({ registerSupported: false });
-  assert.equal(el.querySelector("[data-outcome-register]"), null);
-  assert.match(el.querySelector("[data-outcome-upgrade]")?.textContent ?? "", /0\.11\.0/);
-  assert.equal(el.querySelectorAll("[data-outcome-item]").length, 2);
-  const firstCheckbox = el.querySelector("[data-outcome-item] input[type=checkbox]");
-  assert.equal((firstCheckbox as HTMLInputElement).disabled, true);
 });

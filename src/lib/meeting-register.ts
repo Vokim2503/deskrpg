@@ -1,9 +1,8 @@
 /**
- * The body of "register as a project" — hands a meeting's follow-up work off as a single approval batch.
+ * The body of "register as a project" — hands a meeting's follow-up work to Hermes.
  *
- * Registering **only creates cards**. Cards start out pending approval (`blocked`), and
- * execution starts only after the user approves it (`createApprovalBatch`). Saying "Sophie will
- * research this" in a meeting doesn't make work start moving on its own.
+ * Nothing starts from the meeting transcript alone. Pressing Register is the user's explicit
+ * approval, so the created cards start immediately without a second approval screen.
  *
  * The only thing written back to the meeting minutes is the list of created card ids (a link) —
  * card content is not duplicated. Routes stay thin; the judgment happens here. DB and Hermes are
@@ -16,6 +15,8 @@ import { isTenantSlug } from "./tenant-slug";
 
 export type RegisterBatchInput = {
   type: "task_execution";
+  /** The user's Register click is the execution approval; don't create a second approval gate. */
+  startImmediately: true;
   title: string;
   requestedBy: string;
   source: { kind: "meeting"; id: string };
@@ -34,7 +35,7 @@ export type RegisterBatchInput = {
 export type RegisterBatchResult =
   | {
       ok: true;
-      approvalId: string;
+      approvalId: string | null;
       taskIds: (string | null)[];
       failed?: Array<{ index: number; errorCode: string }>;
     }
@@ -70,7 +71,7 @@ export type RegisterMeetingDeps<Ctx extends RegisterContext = RegisterContext> =
 };
 
 export type RegisterMeetingResult =
-  | { ok: true; registered: MeetingOutcomeRegistered; approvalId: string }
+  | { ok: true; registered: MeetingOutcomeRegistered; approvalId: string | null }
   | { ok: false; response: Response }
   | {
       ok: false;
@@ -160,6 +161,7 @@ export async function registerMeetingOutcome<Ctx extends RegisterContext>(
 
   const batch = await deps.createBatch(ctx, {
     type: "task_execution",
+    startImmediately: true,
     title: minutes.topic,
     requestedBy: deps.requesterForUser(args.userId),
     source: { kind: "meeting", id: minutes.id },

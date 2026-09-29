@@ -93,6 +93,7 @@ test("passes the selected follow-ups as one approval batch and, once done, leave
   assert.equal(result.ok, true);
   const batch = d.batches[0];
   assert.equal(batch.type, "task_execution");
+  assert.equal(batch.startImmediately, true);
   assert.deepEqual(batch.source, { kind: "meeting", id: "m1" });
   assert.equal(batch.requestedBy, "user:host");
   assert.equal(batch.title, "가격 회의");

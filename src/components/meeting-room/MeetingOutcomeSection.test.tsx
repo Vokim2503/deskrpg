@@ -61,12 +61,7 @@ async function mount(
   await act(async () =>
     root.render(
       <I18nProvider initialLocale="ko">
-        <MeetingOutcomeSection
-          minutesId="m1"
-          channelId="c1"
-          npcs={[{ id: "npc-1", name: "소피" }]}
-          {...extra}
-        />
+        <MeetingOutcomeSection minutesId="m1" npcs={[{ id: "npc-1", name: "소피" }]} {...extra} />
       </I18nProvider>,
     ),
   );
@@ -167,7 +162,7 @@ test("even when the kanban gate rejects with a {code} shape, it reads that code 
   assert.ok(Boolean(el.querySelector("[data-outcome-register]")), "버튼은 남는다");
 });
 
-test("does not render the register button when the plugin doesn't advertise initial_status", async () => {
+test("the user's register click stays available without the initial_status capability", async () => {
   stubFetch({
     "GET /api/meetings/m1": () => ({
       status: 200,
@@ -179,11 +174,14 @@ test("does not render the register button when the plugin doesn't advertise init
     }),
   });
   const el = await mount();
-  assert.equal(el.querySelector("[data-outcome-register]"), null);
-  assert.ok(Boolean(el.querySelector("[data-outcome-upgrade]")), "갱신 안내가 보여야 한다");
+  assert.ok(
+    el.querySelector("[data-outcome-register]"),
+    "사용자가 직접 승인하는 등록 버튼이 있어야 한다",
+  );
+  assert.equal(el.querySelector("[data-outcome-upgrade]"), null);
 });
 
-test("treats it as unsupported when the automation status can't be read — does not render a button that would fail", async () => {
+test("a status-read failure doesn't hide the user's own register action", async () => {
   stubFetch({
     "GET /api/meetings/m1": () => ({
       status: 200,
@@ -195,7 +193,7 @@ test("treats it as unsupported when the automation status can't be read — does
     }),
   });
   const el = await mount();
-  assert.equal(el.querySelector("[data-outcome-register]"), null);
+  assert.ok(el.querySelector("[data-outcome-register]"));
 });
 
 test("the end screen hears whether follow-ups remain to register, and can click 'don't register'", async () => {

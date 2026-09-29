@@ -32,6 +32,8 @@ export type ApprovalSource = {
 
 export type ApprovalBatchInput = {
   type: string;
+  /** Skip the pre-execution hold when the user already approved this exact batch in the UI. */
+  startImmediately?: boolean;
   title: string;
   /** The requesting profile name (employee), not a user id. */
   requestedBy: string;
@@ -68,6 +70,15 @@ export type ApprovalBatchResult =
     }
   | { ok: false; errorCode: string; index?: number };
 
+export type ImmediateBatchResult =
+  | {
+      ok: true;
+      approvalId: null;
+      taskIds: (string | null)[];
+      failed?: ApprovalBatchFailure[];
+    }
+  | { ok: false; errorCode: string; index?: number };
+
 /**
  * Creates the cards and bundles them into a single approval.
  *
@@ -80,10 +91,18 @@ export type ApprovalBatchResult =
  * **If not a single card could be made, no approval is created.** An approval with
  * nothing to press is just noise.
  */
+export function createApprovalBatch(
+  ctx: KanbanChannelContext,
+  input: ApprovalBatchInput & { startImmediately: true },
+): Promise<ImmediateBatchResult>;
+export function createApprovalBatch(
+  ctx: KanbanChannelContext,
+  input: ApprovalBatchInput,
+): Promise<ApprovalBatchResult>;
 export async function createApprovalBatch(
   ctx: KanbanChannelContext,
   input: ApprovalBatchInput,
-): Promise<ApprovalBatchResult> {
+): Promise<ApprovalBatchResult | ImmediateBatchResult> {
   if (reviewPolicyFailure(ctx)) return { ok: false, errorCode: "review_policy_required" };
   const ordered = orderApprovalBatch(input.items);
   if (!ordered.ok) return { ok: false, errorCode: ordered.error, index: ordered.index };
@@ -118,8 +137,9 @@ export async function createApprovalBatch(
     const body: CreateTaskBody = {
       title: item.title,
       review_policy: { version: 1, mode: "human", reviewer_profile: null },
-      // The heart of the gate — set from the start. Changing status after creation lets a dispatch slip through in between.
-      initial_status: "blocked",
+      // For ordinary proposals, block from creation so dispatch can't slip through. A meeting's
+      // explicit Register click is already the user's approval, so that path starts normally.
+      ...(input.startImmediately ? {} : { initial_status: "blocked" as const }),
       ...(item.body ? { body: item.body } : {}),
       ...(assignee ? { assignee } : {}),
       ...(item.tenant ? { tenant: item.tenant } : {}),
@@ -136,6 +156,15 @@ export async function createApprovalBatch(
 
   const created = taskIds.filter((id): id is string => id !== null);
   if (created.length === 0) return { ok: false, errorCode: "no_tasks_created" };
+
+  if (input.startImmediately) {
+    return {
+      ok: true,
+      approvalId: null,
+      taskIds,
+      ...(failed.length > 0 ? { failed: failed.sort((a, b) => a.index - b.index) } : {}),
+    };
+  }
 
   // Retries are a path the design promises — if some fail, the button stays and the user
   // presses it again. Thanks to the idempotency key, Hermes returns the same card, but

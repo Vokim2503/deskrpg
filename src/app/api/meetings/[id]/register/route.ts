@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 
 import { db, channels, jsonForDb, meetingMinutes } from "@/db";
+import { schedulePollNow } from "@/lib/automation-poll-trigger";
 import { formatRequester } from "@/lib/approval-requester";
 import { createApprovalBatch } from "@/lib/approvals";
 import { readLocaleCookie } from "@/lib/i18n/server";
 import { getUserId } from "@/lib/internal-rpc";
 import { resolveKanbanChannelContext, reviewPolicyFailure } from "@/lib/kanban-access";
+import { dispatchOnce } from "@/lib/kanban-dispatch";
 import { markMeetingOutcomeNoticeRegistered } from "@/lib/meeting-outcome-notice";
 import { normalizeMeetingMinutesRecord } from "@/lib/meeting-minutes";
 import { registerMeetingOutcome } from "@/lib/meeting-register";
 import { createSubproject, ensureProjectRow, ProjectRegistryError } from "@/lib/project-registry";
 
 /**
- * Register the follow-up work from a meeting's result — cards stand awaiting approval and execution starts after approval.
+ * Register follow-up work from a meeting. Pressing Register is the user's approval, so cards start immediately.
  * All the judgment lives in `registerMeetingOutcome`. This only plugs in the real DB and Hermes.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -70,7 +72,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             throw err;
           }
         },
-        createBatch: (ctx, input) => createApprovalBatch(ctx, input),
+        createBatch: async (ctx, input) => {
+          const batch = await createApprovalBatch(ctx, input);
+          if (batch.ok && input.startImmediately) {
+            await dispatchOnce(ctx);
+            schedulePollNow(ctx.channelId);
+          }
+          return batch;
+        },
         saveRegistered: async (minutesId, registered) => {
           const [row] = await db
             .select({

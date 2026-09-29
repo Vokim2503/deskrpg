@@ -31,12 +31,6 @@ export type MeetingOutcomePanelProps = {
   npcs: Array<{ id: string; name: string }>;
   /** Only the meeting host or channel owner can register and retry the summary. */
   canRegister: boolean;
-  /**
-   * Whether the connected plugin can create cards in a pending-approval state (`initial_status` capability).
-   * If it can't, registration always fails — rather than clicking and seeing an error, we don't render the
-   * button and explain why instead.
-   */
-  registerSupported: boolean;
   registered: MeetingOutcomeRegistered | null;
   onRegister: (body: OutcomeRegistration) => Promise<void>;
   onRetrySummary: () => Promise<void>;
@@ -49,7 +43,6 @@ export default function MeetingOutcomePanel({
   summaryStatus,
   npcs,
   canRegister,
-  registerSupported,
   registered,
   onRegister,
   onRetrySummary,
@@ -145,7 +138,7 @@ export default function MeetingOutcomePanel({
           <ul className="space-y-1.5">
             {draft.items.map((item) => {
               const source = outcome.followUps[item.index];
-              const locked = Boolean(registered) || !canRegister || !registerSupported;
+              const locked = Boolean(registered) || !canRegister;
               return (
                 <li
                   key={item.index}
@@ -223,13 +216,6 @@ export default function MeetingOutcomePanel({
             <p className="text-caption text-success" data-outcome-registered>
               {t("meeting.outcome.registered", { count: registered.taskIds.length })}
             </p>
-          ) : canRegister && !registerSupported ? (
-            <div className="space-y-2">
-              <p className="text-caption text-npc-dark" data-outcome-upgrade>
-                {t("meeting.outcome.pluginUpgradeRequired")}
-              </p>
-              {declineButton}
-            </div>
           ) : (
             canRegister && (
               <div className="space-y-2">

@@ -99,6 +99,31 @@ test("cards land in blocked and are all bundled into one approval", async () => 
   assert.equal(pending.size, 3);
 });
 
+test("a batch explicitly approved by the user's click starts without a second approval record", async () => {
+  const { ctx, channelId } = await seedCtx();
+  const { createApprovalBatch, pendingApprovalTaskIds } = await import("@/lib/approvals");
+  const input = {
+    type: "task_execution",
+    title: "회의에서 직접 등록",
+    requestedBy: "user:owner",
+    source: { kind: "meeting" as const, id: "m-direct" },
+    startImmediately: true,
+    items: [{ title: "바로 시작", idempotencyKey: "meeting:m-direct:0" }],
+  };
+  const result = await createApprovalBatch(ctx, input);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const created = server
+    .requests()
+    .filter((r) => r.method === "POST" && r.path.startsWith("/deskrpg/kanban/tasks?"))
+    .at(-1);
+  assert.ok(created);
+  assert.equal((created.json as Record<string, unknown>).initial_status, undefined);
+  assert.equal((await pendingApprovalTaskIds(channelId)).size, 0);
+  assert.equal(result.approvalId, null);
+});
+
 test("an in-batch precedent given by index gets wired up by id", async () => {
   const { ctx } = await seedCtx();
   const { createApprovalBatch } = await import("@/lib/approvals");

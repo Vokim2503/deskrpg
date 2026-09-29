@@ -2081,7 +2081,7 @@ const zh: Record<string, string> = {
   "meeting.outcome.subprojectPlaceholder": "留空则不分组直接登记",
   "meeting.outcome.register": "将 {count} 项登记到项目",
   "meeting.outcome.registering": "正在登记…",
-  "meeting.outcome.registerHint": "登记后会创建卡片。批准后才会开始执行。",
+  "meeting.outcome.registerHint": "登记后会创建卡片并立即开始工作。",
   "meeting.outcome.decline": "不登记",
   "meeting.autoReturn.counting": "{seconds} 秒后返回办公室",
   "meeting.autoReturn.stay": "留下",

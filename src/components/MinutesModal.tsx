@@ -284,7 +284,6 @@ export default function MinutesModal({
                 <div className="mb-3">
                   <MeetingOutcomeSection
                     minutesId={detail.id}
-                    channelId={channelId}
                     npcs={npcs}
                     onSummaryChanged={(summary) =>
                       setDetail((prev) => (prev ? { ...prev, ...summary } : prev))

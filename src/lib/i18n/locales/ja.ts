@@ -2177,7 +2177,7 @@ const ja: Record<string, string> = {
   "meeting.outcome.subprojectPlaceholder": "空欄のままだとまとめずに登録します",
   "meeting.outcome.register": "{count}件をプロジェクトに登録",
   "meeting.outcome.registering": "登録中…",
-  "meeting.outcome.registerHint": "登録するとカードが作成されます。実行は承認後に始まります。",
+  "meeting.outcome.registerHint": "登録するとカードが作成され、作業がすぐに始まります。",
   "meeting.outcome.decline": "登録しない",
   "meeting.autoReturn.counting": "{seconds}秒後にオフィスへ戻ります",
   "meeting.autoReturn.stay": "留まる",

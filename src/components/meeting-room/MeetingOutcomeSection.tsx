@@ -27,8 +27,6 @@ type Loaded = {
 
 export type MeetingOutcomeSectionProps = {
   minutesId: string;
-  /** The channel this meeting happened in — used to ask whether the connected plugin can create pending-approval cards. */
-  channelId: string;
   npcs: Array<{ id: string; name: string }>;
   /** Called when the summary is regenerated — a chance to refresh the topic/conclusion display on the outer screen. */
   onSummaryChanged?: (summary: { keyTopics: string[]; conclusions: string | null }) => void;
@@ -56,7 +54,6 @@ async function readError(res: Response): Promise<string> {
 
 export default function MeetingOutcomeSection({
   minutesId,
-  channelId,
   npcs,
   onSummaryChanged,
   onRegistered,
@@ -65,30 +62,11 @@ export default function MeetingOutcomeSection({
 }: MeetingOutcomeSectionProps) {
   const t = useT();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  // Treat it as unsupported while unknown — never render even briefly a button that would fail on click.
-  const [registerSupported, setRegisterSupported] = useState(false);
   // Don't re-fetch the minutes when the notification callback changes.
   const report = useRef(onOutcomeLoaded);
   useEffect(() => {
     report.current = onOutcomeLoaded;
   }, [onOutcomeLoaded]);
-
-  useEffect(() => {
-    let cancelled = false;
-    // Same approach as the swarm button: judge by the capability the plugin advertises (not by version).
-    void fetch(`/api/channels/${encodeURIComponent(channelId)}/automation/status`)
-      .then(async (res) => (res.ok ? ((await res.json()) as { capabilities?: string[] }) : null))
-      .then((status) => {
-        if (!cancelled)
-          setRegisterSupported(status?.capabilities?.includes("initial_status") ?? false);
-      })
-      .catch(() => {
-        // If the status can't be read, it stays treated as unsupported.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [channelId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,7 +144,6 @@ export default function MeetingOutcomeSection({
       summaryStatus={loaded.summaryStatus}
       npcs={npcs}
       canRegister={loaded.canManage}
-      registerSupported={registerSupported}
       registered={registered}
       onRegister={register}
       onRetrySummary={retry}

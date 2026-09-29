@@ -2159,8 +2159,7 @@ const en: Record<string, string> = {
   "meeting.outcome.subprojectPlaceholder": "Leave empty to register without grouping",
   "meeting.outcome.register": "Register {count} to the project",
   "meeting.outcome.registering": "Registering…",
-  "meeting.outcome.registerHint":
-    "Registering creates the cards. Work starts only after you approve it.",
+  "meeting.outcome.registerHint": "Registering creates the cards and starts the work immediately.",
   "meeting.outcome.decline": "Don't register",
   "meeting.autoReturn.counting": "Returning to the office in {seconds}s",
   "meeting.autoReturn.stay": "Stay",

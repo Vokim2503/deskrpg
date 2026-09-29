@@ -2151,7 +2151,7 @@ const ko: Record<string, string> = {
   "meeting.outcome.subprojectPlaceholder": "비워 두면 묶지 않고 등록합니다",
   "meeting.outcome.register": "{count}건을 프로젝트에 등록",
   "meeting.outcome.registering": "등록하는 중…",
-  "meeting.outcome.registerHint": "등록하면 카드가 만들어집니다. 실행은 승인한 뒤에 시작됩니다.",
+  "meeting.outcome.registerHint": "버튼을 누르면 카드가 만들어지고 바로 작업을 시작합니다.",
   "meeting.outcome.decline": "등록하지 않음",
   "meeting.autoReturn.counting": "{seconds}초 뒤 오피스로 돌아갑니다",
   "meeting.autoReturn.stay": "머무르기",
