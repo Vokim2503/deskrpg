@@ -243,16 +243,10 @@ type RegisterMeetingDiscussionHandlersArgs = {
       enabled: boolean;
       /** Test seam. Production resolves the NPC bound to Hermes profile `search`. */
       runResearch?: (prompt: string) => Promise<string>;
-      /** Test seam. Production resolves the NPC bound to Hermes profile `mymanager01`. */
+      /** Test seam. Production resolves the existing NPC bound to Hermes profile `writer`. */
       runQueue?: (prompt: string) => Promise<string>;
       /** Deterministic tests only; production uses a timestamp id. */
       meetingId?: () => string;
-      /** Production resolves an unseated worker profile through the channel's bound gateway. */
-      createProfileRunner?: (
-        channelId: string,
-        profileName: "mymanager01",
-        sessionKey: string,
-      ) => Promise<((prompt: string) => Promise<string>) | null>;
     };
   };
 };
@@ -597,8 +591,13 @@ export function registerMeetingDiscussionHandlers({
 
     if (deps.wiki260927?.enabled) {
       const searcher = npcConfigs.find((npc) => npc.hermesProfileName === "search");
+      const writer = npcConfigs.find((npc) => npc.hermesProfileName === "writer");
       if (!searcher) {
         socket.emit("meeting:error", { error: "wiki260927_searcher_missing" });
+        return;
+      }
+      if (!writer) {
+        socket.emit("meeting:error", { error: "wiki260927_writer_missing" });
         return;
       }
 
@@ -627,16 +626,11 @@ export function registerMeetingDiscussionHandlers({
         const researchRunner =
           deps.wiki260927.runResearch ??
           (await resolveWorkerRunner(searcher, `${meetingSessionScope(meetingId)}-research`));
-        wikiQueueRunner = deps.wiki260927.runQueue ?? null;
-        if (!wikiQueueRunner && deps.wiki260927.createProfileRunner) {
-          wikiQueueRunner = await deps.wiki260927.createProfileRunner(
-            channelId,
-            "mymanager01",
-            `${meetingSessionScope(meetingId)}-outbox`,
-          );
-        }
+        wikiQueueRunner =
+          deps.wiki260927.runQueue ??
+          (await resolveWorkerRunner(writer, `${meetingSessionScope(meetingId)}-outbox`));
         if (!researchRunner) throw new Error("wiki260927_searcher_unavailable");
-        if (!wikiQueueRunner) throw new Error("wiki260927_manager_unavailable");
+        if (!wikiQueueRunner) throw new Error("wiki260927_writer_unavailable");
 
         wikiContext = await prepareWikiMeetingContext({
           topic,

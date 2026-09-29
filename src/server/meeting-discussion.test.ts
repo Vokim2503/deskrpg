@@ -996,7 +996,12 @@ test("Wiki260927 meeting uses one shared evidence packet, a dynamic moderator, a
       adapterRegistry: new AdapterRegistry(),
       canControlMeeting: () => true,
       getNpcConfigsForChannel: async () => [
-        npcConfig({ id: "writer", name: "Writer", adapterType: "cli" }),
+        npcConfig({
+          id: "writer",
+          name: "Writer",
+          adapterType: "cli",
+          hermesProfileName: "writer",
+        }),
         npcConfig({
           id: "searcher",
           name: "Searcher",
@@ -1020,18 +1025,13 @@ test("Wiki260927 meeting uses one shared evidence packet, a dynamic moderator, a
             ],
           });
         },
-        createProfileRunner: async (channelId, profileName, sessionKey) => {
-          assert.equal(channelId, "a");
-          assert.equal(profileName, "mymanager01");
-          assert.match(sessionKey, /meeting-meet-fixed-outbox/);
-          return async (prompt) => {
-            queuePrompt = prompt;
-            return JSON.stringify({
-              proposal_id: "meeting-1",
-              status: "pending",
-              meeting_id: "meet-fixed",
-            });
-          };
+        runQueue: async (prompt) => {
+          queuePrompt = prompt;
+          return JSON.stringify({
+            proposal_id: "meeting-1",
+            status: "pending",
+            meeting_id: "meet-fixed",
+          });
         },
         meetingId: () => "meet-fixed",
       },
@@ -1096,7 +1096,7 @@ test("Wiki260927 meeting fails closed before broker creation when Searcher is mi
       adapterRegistry: new AdapterRegistry(),
       canControlMeeting: () => true,
       getNpcConfigsForChannel: async () => [
-        npcConfig({ id: "writer", adapterType: "cli" }),
+        npcConfig({ id: "writer", adapterType: "cli", hermesProfileName: "writer" }),
       ],
       wiki260927: {
         enabled: true,
