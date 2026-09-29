@@ -19,6 +19,13 @@ import {
   createHermesAdapterForNpc,
   deriveHermesContextKey,
 } from "./hermes-dispatch";
+import {
+  prepareWikiMeetingContext,
+  queueWikiMeetingMinutes,
+  WIKI260927_SERVER_ROOT,
+  WIKI260927_VAULT_ID,
+  type WikiMeetingContext,
+} from "../lib/wiki260927-meeting";
 
 const { generateTranscript } =
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -229,6 +236,16 @@ type RegisterMeetingDiscussionHandlersArgs = {
       locale?: string | null,
     ) => Promise<MeetingSummary>;
     persistMeetingMinutes: (input: PersistMeetingMinutesInput) => Promise<string | null>;
+    /** Opt-in Wiki260927 workflow. Omitted in generic deployments and unit fixtures. */
+    wiki260927?: {
+      enabled: boolean;
+      /** Test seam. Production resolves the NPC bound to Hermes profile `search`. */
+      runResearch?: (prompt: string) => Promise<string>;
+      /** Test seam. Production resolves the NPC bound to Hermes profile `mymanager01`. */
+      runQueue?: (prompt: string) => Promise<string>;
+      /** Deterministic tests only; production uses a timestamp id. */
+      meetingId?: () => string;
+    };
   };
 };
 
@@ -563,6 +580,77 @@ export function registerMeetingDiscussionHandlers({
       const selectedSet = new Set(selectedNpcIds);
       candidateNpcs = candidateNpcs.filter((npc) => selectedSet.has(npc.id));
     }
+
+    const meetingId = deps.wiki260927?.meetingId?.() ?? `meet-${Date.now()}`;
+    const moderator =
+      players.get(socket.id)?.characterName?.trim() || user.nickname?.trim() || user.userId;
+    let wikiContext: WikiMeetingContext | null = null;
+    let wikiQueueRunner: ((prompt: string) => Promise<string>) | null = null;
+
+    if (deps.wiki260927?.enabled) {
+      const searcher = npcConfigs.find((npc) => npc.hermesProfileId === "search");
+      const manager = npcConfigs.find((npc) => npc.hermesProfileId === "mymanager01");
+      if (!searcher) {
+        socket.emit("meeting:error", { error: "wiki260927_searcher_missing" });
+        return;
+      }
+      if (!manager) {
+        socket.emit("meeting:error", { error: "wiki260927_manager_missing" });
+        return;
+      }
+
+      const resolveWorkerRunner = async (
+        npc: MeetingNpcConfig,
+        scope: string,
+      ): Promise<((prompt: string) => Promise<string>) | null> => {
+        const resolved = await resolveNpcAdapter(npc, {
+          sessionScope: scope,
+          userId: user.userId,
+          adapterRegistry,
+        });
+        if ("excluded" in resolved) return null;
+        return async (prompt: string) =>
+          (
+            await resolved.adapter.execute({
+              sessionKey: resolved.sessionKey,
+              prompt,
+              instructions: npc.instructions || undefined,
+              userId: user.userId,
+            })
+          ).response;
+      };
+
+      try {
+        const researchRunner =
+          deps.wiki260927.runResearch ??
+          (await resolveWorkerRunner(searcher, `${meetingSessionScope(meetingId)}-research`));
+        wikiQueueRunner =
+          deps.wiki260927.runQueue ??
+          (await resolveWorkerRunner(manager, `${meetingSessionScope(meetingId)}-outbox`));
+        if (!researchRunner) throw new Error("wiki260927_searcher_unavailable");
+        if (!wikiQueueRunner) throw new Error("wiki260927_manager_unavailable");
+
+        wikiContext = await prepareWikiMeetingContext({
+          topic,
+          moderator,
+          vaultId: WIKI260927_VAULT_ID,
+          vaultRoot: WIKI260927_SERVER_ROOT,
+          runResearch: researchRunner,
+        });
+        const sharedEvidence = wikiContext.evidenceMarkdown;
+        candidateNpcs = candidateNpcs.map((npc) => ({
+          ...npc,
+          instructions: [npc.instructions?.trim(), sharedEvidence].filter(Boolean).join("\n\n"),
+        }));
+      } catch (error) {
+        socket.emit("meeting:error", {
+          error: "wiki260927_research_failed",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+    }
+
     let spatialGeneration: number | null = null;
     if (deps.spatial) {
       spatialGeneration = await deps.spatial.start(
@@ -617,7 +705,6 @@ export function registerMeetingDiscussionHandlers({
       }
     }
 
-    const meetingId = `meet-${Date.now()}`;
     // Captured once at start: the whole meeting keeps the opener's language.
     const meetingLocale = deps.locale;
     const sessionKeyPrefix = candidateNpcs[0].sessionKeyPrefix || channelId.slice(0, 8);
@@ -826,6 +913,29 @@ export function registerMeetingDiscussionHandlers({
           });
 
           if (activeBrokers.get(channelId) !== brokerInstance) return;
+          const wikiMinutes =
+            deps.wiki260927?.enabled && wikiContext && wikiQueueRunner && minutesId
+              ? await queueWikiMeetingMinutes({
+                  vaultId: WIKI260927_VAULT_ID,
+                  vaultRoot: WIKI260927_SERVER_ROOT,
+                  meetingId,
+                  minutesId,
+                  topic,
+                  moderator,
+                  participants: meetingParticipants.map((participant) => participant.name),
+                  transcript,
+                  keyTopics: summary.keyTopics,
+                  conclusions: summary.conclusions,
+                  sourceCommit: wikiContext.sourceCommit,
+                  internalSources: wikiContext.internalSources,
+                  externalSources: wikiContext.externalSources,
+                  runQueue: wikiQueueRunner,
+                })
+              : deps.wiki260927?.enabled
+                ? ({ ok: false, code: "invalid_meeting_artifact" } as const)
+                : undefined;
+
+          if (activeBrokers.get(channelId) !== brokerInstance) return;
           io.to(getMeetingRoomId(channelId)).emit("meeting:end", {
             transcript,
             keyTopics: summary.keyTopics,
@@ -837,6 +947,7 @@ export function registerMeetingDiscussionHandlers({
             participantCount: meetingParticipants.length,
             totalTurns: brokerInstance.turns.length,
             durationSeconds,
+            wikiMinutes,
           });
 
           // Leave it in the office room so people outside the meeting room know too. The implementation checks the

@@ -972,3 +972,141 @@ test("the turn-end stream signal carries the same final body as the meeting reco
   assert.equal((done?.payload as { text?: string }).text, "둘째 생성.");
   assert.equal(meetingRooms.get("a")!.messages.at(-1)?.content, "둘째 생성.");
 });
+
+test("Wiki260927 meeting uses one shared evidence packet, a dynamic moderator, and queues the minutes", async () => {
+  const calls: RecordedCall[] = [];
+  const socket = createFakeSocket("socket-1", calls);
+  type Deps = Parameters<typeof registerMeetingDiscussionHandlers>[0]["deps"];
+  type Factory = NonNullable<Deps["createMeetingBroker"]>;
+  let brokerConfigInput!: Parameters<Factory>[0];
+  let callbacks!: Parameters<Factory>[1];
+  let researchPrompt = "";
+  let queuePrompt = "";
+  const commit = "b".repeat(40);
+
+  registerMeetingDiscussionHandlers({
+    io: createFakeIo(calls),
+    socket,
+    deps: {
+      activeBrokers: new Map(),
+      discussionInitiators: new Map(),
+      meetingRooms: new Map([["a", { participants: new Set(["socket-1"]), messages: [] }]]),
+      players: new Map([["socket-1", { characterName: "Vokim" }]]),
+      user: { userId: "u1", nickname: "Owner" },
+      adapterRegistry: new AdapterRegistry(),
+      canControlMeeting: () => true,
+      getNpcConfigsForChannel: async () => [
+        npcConfig({ id: "writer", name: "Writer", adapterType: "cli" }),
+        npcConfig({ id: "searcher", name: "Searcher", hermesProfileId: "search" }),
+        npcConfig({ id: "manager", name: "Manager", hermesProfileId: "mymanager01" }),
+      ],
+      wiki260927: {
+        enabled: true,
+        runResearch: async (prompt) => {
+          researchPrompt = prompt;
+          return JSON.stringify({
+            vault_id: "deskrpg-wiki",
+            vault_root: "/opt/data/deskrpg/wiki260927",
+            source_commit: commit,
+            internal_sources: [
+              { title: "내부", locator: "wiki/a.md", summary: "내부 요약" },
+            ],
+            external_sources: [
+              { title: "외부", locator: "https://example.com", summary: "외부 요약" },
+            ],
+          });
+        },
+        runQueue: async (prompt) => {
+          queuePrompt = prompt;
+          return JSON.stringify({ proposal_id: "meeting-1", status: "pending", meeting_id: "meet-fixed" });
+        },
+        meetingId: () => "meet-fixed",
+      },
+      createMeetingBroker: (config, cb) => {
+        brokerConfigInput = config;
+        callbacks = cb;
+        return {
+          config: {
+            participants: config.npcs.map((npc) => ({ npcId: npc.id, displayName: npc.name })),
+            meetingId: config.meetingId,
+            sessionKeyPrefix: config.sessionKeyPrefix,
+          },
+          turns: [{}],
+          isRunning: () => true,
+          stop: () => {},
+          run: async () => {},
+        } as unknown as MeetingBrokerLike;
+      },
+      generateMeetingSummary: async () => ({
+        keyTopics: ["핵심"],
+        conclusions: "결론",
+        status: "ok",
+      }),
+      persistMeetingMinutes: async () => "minutes-1",
+    },
+  });
+
+  await socket.trigger("meeting:start-discussion", {
+    channelId: "a",
+    topic: "철학과 기술",
+    selectedNpcIds: ["writer"],
+  });
+
+  assert.match(researchPrompt, /회의 주재자: Vokim/);
+  assert.equal(brokerConfigInput.npcs.length, 1, "검색/저장 담당은 회의 참가자로 추가하지 않는다");
+  const evidence = brokerConfigInput.npcs[0].instructions;
+  assert.match(evidence ?? "", /Wiki260927 공통 회의 근거/);
+  assert.match(evidence ?? "", /회의 주재자: Vokim/);
+
+  await callbacks.onMeetingEnd!("회의 전문", 10);
+  assert.match(queuePrompt, /wiki-meeting/);
+  assert.match(queuePrompt, /회의 주재자: Vokim/);
+  const ended = calls.find((call) => call.event === "meeting:end")?.payload as {
+    wikiMinutes?: { ok: boolean; proposalId?: string };
+  };
+  assert.deepEqual(ended.wikiMinutes, { ok: true, proposalId: "meeting-1", status: "pending" });
+});
+
+test("Wiki260927 meeting fails closed before broker creation when Searcher is missing", async () => {
+  const calls: RecordedCall[] = [];
+  const socket = createFakeSocket("socket-1", calls);
+  let created = 0;
+  registerMeetingDiscussionHandlers({
+    io: createFakeIo(calls),
+    socket,
+    deps: {
+      activeBrokers: new Map(),
+      discussionInitiators: new Map(),
+      meetingRooms: new Map([["a", { participants: new Set(["socket-1"]), messages: [] }]]),
+      players: new Map(),
+      user: { userId: "u1" },
+      adapterRegistry: new AdapterRegistry(),
+      canControlMeeting: () => true,
+      getNpcConfigsForChannel: async () => [
+        npcConfig({ id: "writer", adapterType: "cli" }),
+        npcConfig({ id: "manager", hermesProfileId: "mymanager01" }),
+      ],
+      wiki260927: {
+        enabled: true,
+        runResearch: async () => "should not run",
+        runQueue: async () => "should not run",
+      },
+      createMeetingBroker: () => {
+        created++;
+        throw new Error("must not start");
+      },
+      generateMeetingSummary: async () => ({ keyTopics: [], conclusions: null }),
+      persistMeetingMinutes: async () => null,
+    },
+  });
+
+  await socket.trigger("meeting:start-discussion", { channelId: "a", topic: "주제" });
+  assert.equal(created, 0);
+  assert.ok(
+    calls.some(
+      (call) =>
+        call.event === "meeting:error" &&
+        (call.payload as { error?: string }).error === "wiki260927_searcher_missing",
+    ),
+  );
+});

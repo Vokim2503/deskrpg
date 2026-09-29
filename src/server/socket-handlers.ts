@@ -1910,6 +1910,9 @@ export function setupSocketHandlers(io: Server) {
         },
         generateMeetingSummary,
         persistMeetingMinutes,
+        // This deployment's meetings are grounded in the isolated Wiki260927 Hermes clone.
+        // The integration itself pins the exact vault id/root and fails closed on any mismatch.
+        wiki260927: { enabled: true },
       },
     });
 
